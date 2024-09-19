@@ -1,0 +1,431 @@
+---
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+# This notebook will work to understand how to approach missing data. 
+#Get to know visualization techniques to detect interesting patterns in missing data.
+#Learn why mean-imputation or listwise-deletion are not necessarily always the best choice.
+#Perform multiple imputations by chained equations (mice) in R.
+#Assess the quality of imputation to account for statistical uncertainty and make your analysis more robust.
+
+# MAR   missing at random, when missiness is purposeful
+# MNAR  missing not at random when missingness is based on another data.
+# MCAR  missing completly at random, when missingness is not based on another data.
+
+```{r}
+# The  libraries
+library(psych) # will help t decribe the data
+library(NHANES) 
+library(dplyr)
+library(ISLR)  # can also be used to decribe the data
+library(tidyverse)
+library(skimr)
+library(corrplot)
+library(GGally)
+library(ggplot2)
+```
+
+```{r}
+#make a selection
+nhanes_long <- NHANES %>% select(Age,AgeDecade,Education,Poverty,Work,LittleInterest,Depressed,BMI,Pulse,BPSysAve,BPDiaAve,DaysPhysHlthBad,PhysActiveDays)
+#select 500 random indices
+rand_data <- sample(1:nrow(nhanes_long),1000)
+nhanes_dataf <- nhanes_long[rand_1000,]
+nhanes_data <- data.frame(nhanes_dataf)
+```
+
+
+
+
+```{r}
+#outputting the nhanes_data as a dataframe
+nhanes_data
+```
+# Exploratory Data Analysis  for nhanes_data
+
+# 1. Summerise the data, this will give an insight into the descriptive statistics such as the mean median and mode which are the central     tendency and the dispersion which are the range , variance and standard deviation.
+     
+
+
+
+# Summerise the data
+```{r}
+# 1 use the summary as an in-buith function to describe the data or we can loop through to describe the data individually using the
+# psych and ISLR libraries. 
+
+summary(nhanes_data)
+```
+
+# futher to describing the data we use another inbuith function called str
+```{r}
+str(nhanes_data)
+```
+```{r}
+# the skim library can give us a detailed summary of this dataset 
+skim(nhanes_data)
+```
+#── Data Summary ────────────────────────
+#                           Values     
+#Name                       nhanes_data
+#Number of rows             1000       
+#Number of columns          13         
+#_______________________               
+#Column type frequency:                
+#  factor                   5          
+#  numeric                  8          
+#________________________              
+#Group variables            None 
+```{r}
+# we can see that from the about we have a categorical variables of 5 columns and a numeric variable of 8 columns with a row of 1000 and 13 columns in total, we will now proceed to understand the distribution of each columns and how they impact on one another through univariate, Bivariate and Multivariate Exploratory data analysis.
+# we continue to describe the data 
+
+```
+
+# step 1; Extract the numeric and categorical variables separately, do counts and do some EDA for them.
+
+```{r}
+numerical_df <- nhanes_data %>% select(where(is.numeric))
+categorical_df <- nhanes_data %>% select(where(is.factor))
+
+numerical_df
+categorical_df
+```
+
+```{r}
+summary(numerical_df)
+summary(categorical_df)
+```
+# 2. Univariate Analysis
+```{r}
+#Numerical data
+# Loop through each variable
+library(ggplot2)
+
+# Loop through each variable
+for (col_name in colnames(numerical_df)) {
+  p <- ggplot(data = numerical_df) +
+    geom_histogram(mapping = aes_string(x = col_name), binwidth = 0.8) +  # Adjust bin width as needed
+    ggtitle(paste("Histogram of", col_name)) +
+    xlab(col_name) +
+    ylab("Count")
+  
+  # Print the plot
+  print(p)
+}
+
+```
+```{r}
+categorical_df
+# categorical data
+# Loop through each variable
+for (col_name in colnames(categorical_df)) {
+  p <- ggplot(data = categorical_df) +
+    geom_bar(mapping = aes_string(x = var)) +
+    ggtitle(paste("Bar Plot of", col_name)) +
+    xlab(col_name) +
+    ylab("Count")
+  # Print the plot
+  print(p)
+}
+```
+
+
+```{r}
+ggplot(data = nhanes_data, mapping = aes(x = Age, colour = Depressed)) +
+  geom_freqpoly(binwidth = 0.1)
+```
+
+```{r}
+# This is a for loop to perform basic EDA on the numeric data. 
+# Load necessary libraries
+
+library(e1071)  # For skewness calculation
+library(ggplot2)
+library(dplyr)
+summary(numerical_df)
+# Step 1: Loop through numeric variables and calculate statistics
+for (col_name in colnames(numerical_df)) {
+  column <- numerical_df[[col_name]]
+  
+  # Calculate central tendency and dispersion measures
+  mean_val <- mean(column, na.rm = TRUE)
+  median_val <- median(column, na.rm = TRUE)
+  sd_val <- sd(column, na.rm = TRUE)
+  variance_val <- var(column, na.rm = TRUE)
+  skewness_val <- skewness(column, na.rm = TRUE)
+  
+  # Print the calculated values
+  cat("Variable:", col_name, "\n")
+  cat("  Mean       :", mean_val, "\n")
+  cat("  Median     :", median_val, "\n")
+  cat("  Standard Deviation :", sd_val, "\n")
+  cat("  Variance   :", variance_val, "\n")
+  cat("  skewness_val   :", variance_val, "\n")
+  cat("---------------------------------\n")
+
+}
+
+```
+
+
+
+
+```{r}
+# Define the min and max values for each variable from the summary function to understand the data
+limits <- list(
+  Age = c(0, 80),
+  Poverty = c(0, 5),
+  BMI = c(12.89, 80.60),
+  Pulse = c(40, 124),
+  BPSysAve = c(76, 202),
+  BPDiaAve = c(0, 106),
+  DaysPhysHlthBad = c(0, 30),
+  PhysActiveDays = c(1, 7)
+)
+# in this code we did not utilise this limits but we have it here to understand how we will adjust the continuous variables in each plot
+  
+# Loop through numeric variables and create density plots
+for (col_name in colnames(numerical_df)) {
+  column <- numerical_df[[col_name]]
+  
+ # Get min and max values for xlim based on predefined limits
+  xlim <- limits[[col_name]]
+  
+# Use a limits that can visualize the entire density plot but in this case we can use a 20% and 30% spacing from the margins of minimum and maximum respectively. 
+  xlim_min <- xlim[1] - (diff(xlim) * 0.2)  # Extend range slightly below the min
+  xlim_max <- xlim[2] + (diff(xlim) * 0.3)  # Extend range slightly above the max
+  
+  # Density estimation with confidence intervals
+  density_data <- density(column, na.rm = TRUE)
+  density_df <- data.frame(x = density_data$x, y = density_data$y)
+  
+  # Plot with confidence intervals and skewness
+  p <- ggplot(numerical_df, aes(x = .data[[col_name]])) +
+    geom_density(aes(y = ..density..), fill = "lightblue", alpha = 0.5) +
+    geom_ribbon(data = density_df, aes(x = x, ymin = y - 1.96 * sd_val / sqrt(length(column)), ymax = y + 1.96 * sd_val / sqrt(length(column))), alpha = 0.2) +
+    geom_vline(xintercept = mean_val, color = "red", linetype = "dashed", linewidth = 1) +
+    geom_vline(xintercept = median_val, color = "green", linetype = "dotted", linewidth = 1) +
+    ggtitle(paste("Density Plot for", col_name)) +
+    labs(x = col_name, y = "Density") +
+    annotate("text", x = mean_val, y = max(density_df$y) * 0.3, label = paste("Mean:", round(mean_val, 2)), color = "red", vjust = -4, size = 3) +
+    annotate("text", x = median_val, y = max(density_df$y) * 0.3, label = paste("Median:", round(median_val, 2)), color = "black", vjust = -2, size = 3) +
+    annotate("text", x = mean_val, y = max(density_df$y) * 0.3, label = paste("Skewness:", round(skewness_val, 2)), color = ifelse(skewness_val > 0, "blue", "orange"), vjust = -1, size = 3) +
+    scale_x_continuous(limits = c(xlim_min, xlim_max)) +  # Set dynamic x-axis limits
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 10),
+      axis.title = element_text(size = 8),
+      axis.text = element_text(size = 7),
+      plot.margin = margin(5, 10, 5, 10)  # Adjust margins if needed
+    )
+  
+  # Print the plot
+  print(p)
+} # If we write this code without setting the xlim_min and xlim_maximum then we will have density plots without the whole edges showing up. 
+ 
+```
+
+
+```{r}
+
+
+```
+
+
+# 3. Bivariate Analysis  by using scatter plots and correlation coefficients we can analyze the relationship between two variables. 
+
+```{r}
+# The first thing we do is to look at the correlation in the data frame that have both numerical and correlation
+# Load necessary libraries
+library(corrplot)
+library(DescTools)  # For Cramer's V
+
+# Identify numerical and categorical columns
+numerical_vars <- sapply(nhanes_data, is.numeric)
+categorical_vars <- sapply(nhanes_data, is.factor) 
+
+# Extract names of numerical and categorical variables
+num_var_names <- names(numerical_vars)[numerical_vars]
+cat_var_names <- names(categorical_vars)[categorical_vars]
+```
+
+
+```{r}
+# Compute and plot the correlation matrix for numerical variables
+if (length(num_var_names) > 1) {
+  correlation_matrix <- cor(nhanes_data[, num_var_names], use = "complete.obs")
+  print(correlation_matrix)
+  corrplot(correlation_matrix, method = "circle")
+} else {
+  cat("No numerical variables or not enough numerical variables for correlation matrix.")
+}
+```
+
+
+```{r}
+# Loop through numerical and categorical variables to create boxplots and ANOVA
+for (num_var in num_var_names) {
+  for (cat_var in cat_var_names) {
+    # Perform ANOVA
+    anova_result <- aov(as.formula(paste(num_var, "~", cat_var)), data = nhanes_data)
+    
+    # Print ANOVA results
+    cat("ANOVA for", num_var, "by", cat_var, "\n")
+    print(summary(anova_result))
+    cat("\n")
+    
+    # Create a boxplot
+    p <- ggplot(data = nhanes_data, mapping = aes_string(x = cat_var, y = num_var)) +
+      geom_boxplot() +
+      ggtitle(paste("Boxplot of", num_var, "by", cat_var)) +
+      xlab(cat_var) +
+      ylab(num_var) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    
+    # Print the plot
+    print(p)
+  }
+}
+
+
+
+```
+```{r}
+
+# Loop through pairs of numeric variables and create scatter plots
+for (i in 1:(length(names(numerical_df))-1)) {
+  for (j in (i+1):length(num_var_names)) {
+    num_var_x <- num_var_names[i]
+    num_var_y <- num_var_names[j]
+    
+    # Create a scatter plot
+    p <- ggplot(data = nhanes_data, mapping = aes_string(x = num_var_x, y = num_var_y)) +
+      geom_point(alpha = 0.5) +
+      ggtitle(paste("Scatter plot of", num_var_y, "vs", num_var_x)) +
+      xlab(num_var_x) +
+      ylab(num_var_y) +
+      theme_minimal()
+    
+    # Print the plot
+    print(p)
+  }
+}
+
+```
+```{r}
+
+library(GGally)
+# 
+ggpairs(numerical_df, 
+        title = "Pairwise Scatter Plot Matrix of Numeric Variables",
+        lower = list(continuous = "points"),
+        diag = list(continuous = "densityDiag"),
+        upper = list(continuous = "cor"))
+
+```
+
+# To measure covaration of depression among the numerical varables 
+```{r}
+library(ggplot2)
+# Loop through each numerical variable
+for (col_name in names(numerical_df)) {
+  p <- ggplot(data = nhanes_data, mapping = aes_string(x = col_name, colour = "Depressed")) +
+    geom_freqpoly(binwidth = 2) +
+    ggtitle(paste("Frequency of", col_name)) +
+    xlab(col_name) +
+    ylab("Frequency")
+  
+  # Print the plot
+  print(p)
+}
+```
+
+
+```{r}
+# using the interquantile range methond to detect outlier
+catch_outliers <- function(numerical_df, column_name) {
+  Q1 <- quantile(numerical_df[[column_name]], 0.25) # First quartile (25th percentile)
+  Q3 <- quantile(numerical_df[[column_name]], 0.75) # Third quartile (75th percentile)
+  IQR_value <- Q3 - Q1                    # Interquartile range
+  
+  # Define lower and upper bounds
+  lower_bound <- Q1 - 1.5 * IQR_value
+  upper_bound <- Q3 + 1.5 * IQR_value
+  
+  # Identify outliers
+  outliers <- numerical_df[numerical_df[[column_name]] < lower_bound | numerical_df[[column_name]] > upper_bound, ]
+  
+  return(outliers)
+}
+```
+#To find the outlier in the numeric dataframe we loop the dataset
+```{r}
+for (col_name in names(numerical_df)) {
+  cat("Outliers in", col_name, ":\n")
+  outliers <- catch_outliers(numerical_df, col_name)
+  print(outliers)
+  cat("\n")
+} # Error because of the presence of missing values so we leave it and deal with missing values or use boxplot to show below
+```
+
+
+We can loop through the data to find the outliers. 
+```{r}
+for (col_name in names(numerical_df)) {
+  # Create boxplot
+  p <- ggplot(data = numerical_df, aes_string(y = num_var)) +
+    geom_boxplot(outlier.color = "red", outlier.shape = 16, outlier.size = 2) +  
+    ggtitle(paste("Boxplot of", num_var)) +
+    ylab(num_var) +
+    theme_minimal()
+  
+  # Print the plot
+  print(p)
+}
+```
+Handling missing values in the dataset
+```{r}
+install.packages("naniar")
+library(naniar)
+```
+
+```{r}
+# Are there missing values in the dataset?
+any_na(nhanes_data)
+# How many?
+n_miss(nhanes_data)
+prop_miss(nhanes_data)
+# Which variables are affected?
+nhanes %>% is.na() %>% colSums()
+```
+
+
+```{r}
+# Get number of missings per variable (n and %)
+miss_var_summary(nhanes_data)
+miss_var_table(nhanes_data)
+# Get number of missings per participant (n and %)
+miss_case_summary(nhanes_data)
+miss_case_table(nhanes_data)
+```
+
+
+```{r}
+# Which variables contain the most missing variables?
+gg_miss_var(nhanes_data)
+```
+
+#To get a better understanding whether or not the data are missing at random, we are going to visualize the locations of #missing values across all variables.
+```{r}
+library("ggplot2")
+# Where are missings located?
+vis_miss(nhanes_data) + theme(axis.text.x = element_text(angle=80))
+```
+
+
+
+
+
+
